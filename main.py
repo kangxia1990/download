@@ -10,19 +10,11 @@ import re
 import boto3
 from botocore.exceptions import ClientError
 
-# 确保必要的目录存在
-for directory in ['static', 'videos', 'templates']:
-    Path(directory).mkdir(exist_ok=True)
-
 app = FastAPI()
 
-# 配置静态文件和模板
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-
-# 创建视频存储目录
-VIDEOS_DIR = Path("videos")
-VIDEOS_DIR.mkdir(exist_ok=True)
+# 配置静态文件和模板，使用相对路径
+app.mount("/static", StaticFiles(directory="./static"), name="static")
+templates = Jinja2Templates(directory="./templates")
 
 # 存储下载进度
 download_progress = {}

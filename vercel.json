@@ -8,8 +8,16 @@
     ],
     "routes": [
         {
+            "src": "/static/(.*)",
+            "dest": "/static/$1"
+        },
+        {
             "src": "/(.*)",
             "dest": "main.py"
         }
-    ]
+    ],
+    "env": {
+        "PYTHONPATH": ".",
+        "MAX_WORKERS": "1"
+    }
 } 
