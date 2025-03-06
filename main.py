@@ -14,8 +14,12 @@ app = FastAPI()
 
 # 获取项目根目录
 BASE_DIR = Path(__file__).resolve().parent
-TEMP_DIR = Path('/tmp')
+TEMP_DIR = Path('/tmp' if os.environ.get('VERCEL') else './videos')
 TEMP_DIR.mkdir(exist_ok=True)
+
+# 确保目录存在
+for directory in ['static', 'templates']:
+    Path(directory).mkdir(exist_ok=True)
 
 # 添加 CORS 中间件
 app.add_middleware(

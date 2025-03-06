@@ -2,8 +2,11 @@
     "version": 2,
     "builds": [
         {
-            "src": "api/index.py",
-            "use": "@vercel/python"
+            "src": "main.py",
+            "use": "@vercel/python",
+            "config": {
+                "maxDuration": 60
+            }
         }
     ],
     "routes": [
@@ -12,12 +15,8 @@
             "dest": "/static/$1"
         },
         {
-            "src": "/tmp/(.*)",
-            "dest": "/tmp/$1"
-        },
-        {
             "src": "/(.*)",
-            "dest": "/api/index.py"
+            "dest": "main.py"
         }
     ]
 } 
