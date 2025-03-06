@@ -11,6 +11,7 @@ import boto3
 from botocore.exceptions import ClientError
 from functools import lru_cache
 from fastapi.middleware.cors import CORSMiddleware
+from botocore.config import Config
 
 app = FastAPI()
 
@@ -36,10 +37,11 @@ s3_client = boto3.client(
     aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
     aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
     region_name=os.environ.get('AWS_REGION', 'us-east-1'),
-    config=boto3.Config(
+    config=Config(
         connect_timeout=5,
         read_timeout=5,
-        retries={'max_attempts': 2}
+        retries={'max_attempts': 2},
+        region_name=os.environ.get('AWS_REGION', 'us-east-1')
     )
 )
 
