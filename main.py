@@ -7,6 +7,8 @@ import os
 import asyncio
 from pathlib import Path
 import re
+import boto3
+from botocore.exceptions import ClientError
 
 # 确保必要的目录存在
 for directory in ['static', 'videos', 'templates']:
@@ -25,43 +27,47 @@ VIDEOS_DIR.mkdir(exist_ok=True)
 # 存储下载进度
 download_progress = {}
 
+# 添加 S3 配置
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.environ.get('AWS_REGION', 'us-east-1')
+)
+BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
+
 def download_video(url: str, video_id: str):
     """后台下载视频的函数"""
+    temp_dir = '/tmp'  # Vercel 允许使用 /tmp 目录
+    output_template = f'{temp_dir}/%(title)s.%(ext)s'
+    
     ydl_opts = {
-        'format': 'bestvideo+bestaudio/best',  # 选择最佳视频和音频质量
-        'outtmpl': f'videos/%(title)s.%(ext)s',
+        'format': 'bestvideo+bestaudio/best',
+        'outtmpl': output_template,
         'progress_hooks': [lambda d: update_progress(video_id, d)],
-        # B站特定配置
-        'cookiesfrombrowser': ['chrome'],  # 从Chrome浏览器获取cookies
-        'extractor_args': {
-            'bilibili': {
-                'cookie': [],  # 如果需要可以添加cookie
-            }
-        },
-        # 下载设置
-        'merge_output_format': 'mp4',  # 将视频合并为mp4格式
-        'writethumbnail': True,  # 下载缩略图
-        'writesubtitles': True,  # 下载字幕（如果有）
-        'subtitleslangs': ['zh-CN'],  # 下载中文字幕
+        'merge_output_format': 'mp4',
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # 先获取视频信息
             info = ydl.extract_info(url, download=False)
-            # 更新下载状态
             download_progress[video_id].update({
                 'title': info.get('title', 'Unknown'),
-                'duration': info.get('duration', 0),
                 'status': 'starting'
             })
-            # 开始下载
             ydl.download([url])
+            
+            # 上传到 S3
+            filename = f"{info['title']}.mp4"
+            file_path = f"{temp_dir}/{filename}"
+            if os.path.exists(file_path):
+                s3_client.upload_file(file_path, BUCKET_NAME, filename)
+                os.remove(file_path)  # 清理临时文件
+                
     except Exception as e:
         download_progress[video_id] = {
-            'status': 'error', 
-            'error': str(e),
-            'details': '请确保链接正确且视频可以正常访问'
+            'status': 'error',
+            'error': str(e)
         }
 
 def clean_text(text: str) -> str:
@@ -112,15 +118,27 @@ def update_progress(video_id: str, d: dict):
 @app.get("/")
 async def home(request: Request):
     """主页路由"""
-    videos = []
-    for file in VIDEOS_DIR.glob("*"):
-        if file.is_file() and file.suffix.lower() in ['.mp4', '.flv', '.webm']:
-            videos.append({
-                'name': file.stem,
-                'filename': file.name,
-                'size': f"{file.stat().st_size / (1024*1024):.2f} MB",
-                'url': f"/videos/{file.name}"  # 视频访问URL
-            })
+    try:
+        # 从 S3 获取视频列表
+        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
+        videos = []
+        
+        for obj in response.get('Contents', []):
+            if obj['Key'].lower().endswith(('.mp4', '.flv', '.webm')):
+                size_mb = obj['Size'] / (1024 * 1024)
+                videos.append({
+                    'name': os.path.splitext(obj['Key'])[0],
+                    'filename': obj['Key'],
+                    'size': f"{size_mb:.2f} MB",
+                    'url': s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={'Bucket': BUCKET_NAME, 'Key': obj['Key']},
+                        ExpiresIn=3600  # URL 有效期 1 小时
+                    )
+                })
+    except Exception as e:
+        videos = []
+        print(f"Error fetching videos: {e}")
     
     return templates.TemplateResponse(
         "index.html",
@@ -144,16 +162,8 @@ async def get_progress(video_id: str):
 async def delete_video(filename: str):
     """删除视频文件"""
     try:
-        file_path = VIDEOS_DIR / filename
-        if file_path.exists():
-            os.remove(file_path)
-            # 同时删除可能存在的缩略图和字幕文件
-            for ext in ['.jpg', '.png', '.vtt', '.srt']:
-                thumb_path = file_path.with_suffix(ext)
-                if thumb_path.exists():
-                    os.remove(thumb_path)
-            return {"status": "success"}
-        return {"status": "file_not_found"}
+        s3_client.delete_object(Bucket=BUCKET_NAME, Key=filename)
+        return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
