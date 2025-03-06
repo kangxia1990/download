@@ -15,6 +15,9 @@ from botocore.config import Config
 
 app = FastAPI()
 
+# 获取项目根目录
+BASE_DIR = Path(__file__).resolve().parent
+
 # 添加 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
@@ -24,25 +27,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 配置静态文件和模板，使用相对路径
-app.mount("/static", StaticFiles(directory="./static"), name="static")
-templates = Jinja2Templates(directory="./templates")
+# 配置静态文件和模板，使用绝对路径
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # 存储下载进度
 download_progress = {}
 
-# 修改 S3 客户端初始化部分
+# S3 客户端配置
 s3_client = boto3.client(
     's3',
     aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
     aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.environ.get('AWS_REGION', 'us-east-1'),
-    config=Config(
-        connect_timeout=5,
-        read_timeout=5,
-        retries={'max_attempts': 2},
-        region_name=os.environ.get('AWS_REGION', 'us-east-1')
-    )
+    region_name=os.environ.get('AWS_REGION', 'us-east-1')
 )
 
 BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
@@ -179,9 +176,6 @@ async def delete_video(filename: str):
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-# 添加静态文件路由来访问下载的视频
-app.mount("/videos", StaticFiles(directory="videos"), name="videos")
 
 @app.get("/health")
 async def health_check():

@@ -2,33 +2,18 @@
     "version": 2,
     "builds": [
         {
-            "src": "main.py",
-            "use": "@vercel/python",
-            "config": {
-                "maxDuration": 10,
-                "runtime": "python3.9"
-            }
+            "src": "api/index.py",
+            "use": "@vercel/python"
         }
     ],
     "routes": [
         {
             "src": "/static/(.*)",
-            "dest": "/static/$1",
-            "headers": {
-                "cache-control": "public, max-age=31536000, immutable"
-            }
+            "dest": "/static/$1"
         },
         {
             "src": "/(.*)",
-            "dest": "main.py",
-            "headers": {
-                "cache-control": "public, max-age=0, must-revalidate"
-            }
+            "dest": "/api/index.py"
         }
-    ],
-    "env": {
-        "PYTHONPATH": ".",
-        "MAX_WORKERS": "1",
-        "PYTHONUNBUFFERED": "1"
-    }
+    ]
 } 
