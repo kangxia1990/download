@@ -153,7 +153,7 @@
                 
                 const data = await response.json();
                 if (data.status === 'success') {
-                    // 刷新页面显示更新后的视频列表
+                    // 直接刷新页面
                     location.reload();
                 } else {
                     alert('删除失败：' + (data.message || '未知错误'));
@@ -177,51 +177,6 @@
                 // 隐藏当前视频
                 videoElement.classList.add('hidden');
             }
-        }
-
-        // 添加重试逻辑
-        async function fetchWithRetry(url, retries = 3) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    return await response.json();
-                } catch (error) {
-                    if (i === retries - 1) throw error;
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-                }
-            }
-        }
-
-        // 修改视频列表加载函数
-        async function loadVideos() {
-            try {
-                const data = await fetchWithRetry('/api/videos');
-                if (data.videos) {
-                    updateVideoList(data.videos);
-                }
-            } catch (error) {
-                console.error('Failed to load videos:', error);
-                // 显示错误信息给用户
-                const container = document.querySelector('.grid');
-                container.innerHTML = `
-                    <div class="col-span-full text-center text-red-600">
-                        加载失败，<a href="javascript:loadVideos()" class="underline">点击重试</a>
-                    </div>
-                `;
-            }
-        }
-
-        // 页面加载完成后加载视频列表
-        window.addEventListener('load', loadVideos);
-
-        function updateVideoList(videos) {
-            const container = document.querySelector('.grid');
-            container.innerHTML = videos.map(video => `
-                <div class="bg-gray-50 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-                    <!-- ... 视频卡片内容 ... -->
-                </div>
-            `).join('');
         }
     </script>
 </body>
