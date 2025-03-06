@@ -30,32 +30,18 @@ templates = Jinja2Templates(directory="./templates")
 # 存储下载进度
 download_progress = {}
 
-# 添加 S3 配置
-@lru_cache()
-def get_s3_client():
-    """缓存 S3 客户端实例"""
-    return boto3.client(
-        's3',
-        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.environ.get('AWS_REGION', 'us-east-1')
+# 修改 S3 客户端初始化部分
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.environ.get('AWS_REGION', 'us-east-1'),
+    config=boto3.Config(
+        connect_timeout=5,
+        read_timeout=5,
+        retries={'max_attempts': 2}
     )
-
-# 延迟初始化 S3 客户端
-s3_client = None
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时初始化 S3 客户端"""
-    global s3_client
-    try:
-        s3_client = get_s3_client()
-        # 测试连接
-        s3_client.list_buckets()
-    except Exception as e:
-        print(f"Failed to initialize S3 client: {e}")
-        # 不要让应用崩溃，而是继续运行
-        pass
+)
 
 BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
 
