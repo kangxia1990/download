@@ -19,5 +19,10 @@
     "env": {
         "PYTHONPATH": ".",
         "MAX_WORKERS": "1"
+    },
+    "functions": {
+        "api/*.py": {
+            "maxDuration": 60
+        }
     }
 } 

@@ -178,6 +178,28 @@
                 videoElement.classList.add('hidden');
             }
         }
+
+        // 页面加载完成后异步获取视频列表
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/videos');
+                const data = await response.json();
+                if (data.videos) {
+                    updateVideoList(data.videos);
+                }
+            } catch (error) {
+                console.error('Failed to load videos:', error);
+            }
+        });
+
+        function updateVideoList(videos) {
+            const container = document.querySelector('.grid');
+            container.innerHTML = videos.map(video => `
+                <div class="bg-gray-50 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+                    <!-- ... 视频卡片内容 ... -->
+                </div>
+            `).join('');
+        }
     </script>
 </body>
 </html> 

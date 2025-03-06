@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import boto3
 from botocore.exceptions import ClientError
+from functools import lru_cache
 
 app = FastAPI()
 
@@ -20,12 +21,25 @@ templates = Jinja2Templates(directory="./templates")
 download_progress = {}
 
 # 添加 S3 配置
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.environ.get('AWS_REGION', 'us-east-1')
-)
+@lru_cache()
+def get_s3_client():
+    """缓存 S3 客户端实例"""
+    return boto3.client(
+        's3',
+        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+        region_name=os.environ.get('AWS_REGION', 'us-east-1')
+    )
+
+# 延迟初始化 S3 客户端
+s3_client = None
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化 S3 客户端"""
+    global s3_client
+    s3_client = get_s3_client()
+
 BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
 
 def download_video(url: str, video_id: str):
@@ -110,11 +124,18 @@ def update_progress(video_id: str, d: dict):
 @app.get("/")
 async def home(request: Request):
     """主页路由"""
+    # 初始加载时不获取视频列表
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "videos": []}
+    )
+
+@app.get("/api/videos")
+async def get_videos():
+    """异步获取视频列表"""
     try:
-        # 从 S3 获取视频列表
         response = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
         videos = []
-        
         for obj in response.get('Contents', []):
             if obj['Key'].lower().endswith(('.mp4', '.flv', '.webm')):
                 size_mb = obj['Size'] / (1024 * 1024)
@@ -125,17 +146,12 @@ async def home(request: Request):
                     'url': s3_client.generate_presigned_url(
                         'get_object',
                         Params={'Bucket': BUCKET_NAME, 'Key': obj['Key']},
-                        ExpiresIn=3600  # URL 有效期 1 小时
+                        ExpiresIn=3600
                     )
                 })
+        return {"videos": videos}
     except Exception as e:
-        videos = []
-        print(f"Error fetching videos: {e}")
-    
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "videos": videos}
-    )
+        return {"videos": [], "error": str(e)}
 
 @app.post("/download")
 async def download(background_tasks: BackgroundTasks, url: str = Form(...)):
@@ -160,4 +176,25 @@ async def delete_video(filename: str):
         return {"status": "error", "message": str(e)}
 
 # 添加静态文件路由来访问下载的视频
-app.mount("/videos", StaticFiles(directory="videos"), name="videos") 
+app.mount("/videos", StaticFiles(directory="videos"), name="videos")
+
+@app.get("/health")
+async def health_check():
+    """健康检查端点"""
+    return {"status": "ok"}
+
+@app.get("/status")
+async def status_check():
+    """服务状态检查"""
+    try:
+        # 测试 S3 连接
+        s3_client.list_buckets()
+        s3_status = "connected"
+    except Exception as e:
+        s3_status = f"error: {str(e)}"
+
+    return {
+        "status": "ok",
+        "s3_status": s3_status,
+        "environment": "production" if os.environ.get('VERCEL') else "development"
+    } 
