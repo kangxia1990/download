@@ -5,7 +5,8 @@
             "src": "main.py",
             "use": "@vercel/python",
             "config": {
-                "maxDuration": 60
+                "maxDuration": 60,
+                "runtime": "python3.9"
             }
         }
     ],
@@ -21,6 +22,7 @@
     ],
     "env": {
         "PYTHONPATH": ".",
-        "MAX_WORKERS": "1"
+        "MAX_WORKERS": "1",
+        "PYTHONUNBUFFERED": "1"
     }
 } 

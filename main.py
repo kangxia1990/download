@@ -10,8 +10,18 @@ import re
 import boto3
 from botocore.exceptions import ClientError
 from functools import lru_cache
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# 添加 CORS 中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 配置静态文件和模板，使用相对路径
 app.mount("/static", StaticFiles(directory="./static"), name="static")
@@ -38,7 +48,14 @@ s3_client = None
 async def startup_event():
     """应用启动时初始化 S3 客户端"""
     global s3_client
-    s3_client = get_s3_client()
+    try:
+        s3_client = get_s3_client()
+        # 测试连接
+        s3_client.list_buckets()
+    except Exception as e:
+        print(f"Failed to initialize S3 client: {e}")
+        # 不要让应用崩溃，而是继续运行
+        pass
 
 BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
 
