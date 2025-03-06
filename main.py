@@ -7,16 +7,15 @@ import os
 import asyncio
 from pathlib import Path
 import re
-import boto3
-from botocore.exceptions import ClientError
 from functools import lru_cache
 from fastapi.middleware.cors import CORSMiddleware
-from botocore.config import Config
 
 app = FastAPI()
 
 # 获取项目根目录
 BASE_DIR = Path(__file__).resolve().parent
+TEMP_DIR = Path('/tmp')
+TEMP_DIR.mkdir(exist_ok=True)
 
 # 添加 CORS 中间件
 app.add_middleware(
@@ -27,27 +26,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 配置静态文件和模板，使用绝对路径
+# 配置静态文件和模板
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.mount("/tmp", StaticFiles(directory="/tmp"), name="tmp")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # 存储下载进度
 download_progress = {}
 
-# S3 客户端配置
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.environ.get('AWS_REGION', 'us-east-1')
-)
-
-BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
-
 def download_video(url: str, video_id: str):
     """后台下载视频的函数"""
-    temp_dir = '/tmp'  # Vercel 允许使用 /tmp 目录
-    output_template = f'{temp_dir}/%(title)s.%(ext)s'
+    output_template = str(TEMP_DIR / '%(title)s.%(ext)s')
     
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',
@@ -64,13 +53,6 @@ def download_video(url: str, video_id: str):
                 'status': 'starting'
             })
             ydl.download([url])
-            
-            # 上传到 S3
-            filename = f"{info['title']}.mp4"
-            file_path = f"{temp_dir}/{filename}"
-            if os.path.exists(file_path):
-                s3_client.upload_file(file_path, BUCKET_NAME, filename)
-                os.remove(file_path)  # 清理临时文件
                 
     except Exception as e:
         download_progress[video_id] = {
@@ -126,34 +108,23 @@ def update_progress(video_id: str, d: dict):
 @app.get("/")
 async def home(request: Request):
     """主页路由"""
-    # 初始加载时不获取视频列表
+    videos = []
+    try:
+        for file in TEMP_DIR.glob("*.mp4"):
+            if file.is_file():
+                videos.append({
+                    'name': file.stem,
+                    'filename': file.name,
+                    'size': f"{file.stat().st_size / (1024*1024):.2f} MB",
+                    'url': f"/tmp/{file.name}"
+                })
+    except Exception as e:
+        print(f"Error listing videos: {e}")
+    
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "videos": []}
+        {"request": request, "videos": videos}
     )
-
-@app.get("/api/videos")
-async def get_videos():
-    """异步获取视频列表"""
-    try:
-        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
-        videos = []
-        for obj in response.get('Contents', []):
-            if obj['Key'].lower().endswith(('.mp4', '.flv', '.webm')):
-                size_mb = obj['Size'] / (1024 * 1024)
-                videos.append({
-                    'name': os.path.splitext(obj['Key'])[0],
-                    'filename': obj['Key'],
-                    'size': f"{size_mb:.2f} MB",
-                    'url': s3_client.generate_presigned_url(
-                        'get_object',
-                        Params={'Bucket': BUCKET_NAME, 'Key': obj['Key']},
-                        ExpiresIn=3600
-                    )
-                })
-        return {"videos": videos}
-    except Exception as e:
-        return {"videos": [], "error": str(e)}
 
 @app.post("/download")
 async def download(background_tasks: BackgroundTasks, url: str = Form(...)):
@@ -172,7 +143,9 @@ async def get_progress(video_id: str):
 async def delete_video(filename: str):
     """删除视频文件"""
     try:
-        s3_client.delete_object(Bucket=BUCKET_NAME, Key=filename)
+        file_path = TEMP_DIR / filename
+        if file_path.exists():
+            os.remove(file_path)
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -185,15 +158,7 @@ async def health_check():
 @app.get("/status")
 async def status_check():
     """服务状态检查"""
-    try:
-        # 测试 S3 连接
-        s3_client.list_buckets()
-        s3_status = "connected"
-    except Exception as e:
-        s3_status = f"error: {str(e)}"
-
     return {
         "status": "ok",
-        "s3_status": s3_status,
         "environment": "production" if os.environ.get('VERCEL') else "development"
     } 
